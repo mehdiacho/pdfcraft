@@ -41,6 +41,7 @@ mod appearance;
 pub mod canvas;
 mod chrome;
 mod combine_grid;
+pub mod compact;
 mod image_pick;
 mod tags_ui;
 pub use combine_grid::ThumbState as CombineThumb;
@@ -496,6 +497,8 @@ pub struct PdfCraftApp {
     /// `None` shows the Home tab.
     pub active: Option<usize>,
     pub mode: Mode,
+    /// The phone layout's pages and sheets (see [`compact`]).
+    pub compact: compact::Compact,
     /// Workspace used for newly opened PDFs; independent of PDF Initial View metadata.
     pub default_mode: Mode,
     /// Page display and zoom for newly opened PDFs that don't ask for their own (Preferences ▸
@@ -896,6 +899,7 @@ impl PdfCraftApp {
             closed_tabs: Vec::new(),
             active: None,
             mode: Mode::AllTools,
+            compact: compact::Compact::default(),
             default_mode: Mode::AllTools,
             view_defaults: Default::default(),
             units: Default::default(),
@@ -3124,6 +3128,17 @@ impl eframe::App for PdfCraftApp {
         self.sync_window_frame(&ctx);
         if self.draws_window_frame() {
             window_controls::resize_edges(&ctx);
+        }
+        if compact::active(&ctx) {
+            // Phones: an app bar, a bottom bar and full-width pages instead of the desktop chrome.
+            compact::show(self, ui);
+            self.process_pending_edits();
+            palette::show(self, &ctx);
+            dialogs::show(self, &ctx);
+            self.show_progress(&ctx);
+            widgets::toast(self, &ctx);
+            self.finish_render_frame(&ctx);
+            return;
         }
         chrome::tab_strip(self, ui);
         chrome::mode_bar(self, ui);
