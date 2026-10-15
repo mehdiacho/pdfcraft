@@ -1,0 +1,11 @@
+[package]
+name = "pdfcraft-picker-android"
+description = "rfd's AsyncFileDialog API for Android, answered by the app's system pickers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

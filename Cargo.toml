@@ -51,6 +51,8 @@ pdfcraft-render = { path = "crates/render", version = "0.8.0" }
 pdfcraft-engine = { path = "crates/engine", version = "0.8.0" }
 pdfcraft-platform = { path = "crates/platform", version = "0.8.0" }
 pdfcraft-ui-egui = { path = "crates/ui-egui", version = "0.8.0" }
+pdfcraft-picker-android = { path = "crates/picker-android", version = "0.8.0" }
+pdfcraft-clipboard-android = { path = "crates/clipboard-android", version = "0.8.0" }
 pdfcraft-automation = { path = "crates/automation", version = "0.8.0", default-features = false }
 
 # pdf

@@ -7,6 +7,13 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+// rfd and arboard have no Android backends. These stand-ins have the same API (the pickers are
+// answered by the Android app's system pickers), so under the same names the crate uses them unchanged.
+#[cfg(target_os = "android")]
+extern crate arboard_android as arboard;
+#[cfg(target_os = "android")]
+extern crate rfd_android as rfd;
+
 /// Whether `a` and `b` name the same file: equal, or equal once made absolute against the
 /// current directory (links are not resolved, as in `last_session`).
 pub(crate) fn same_file(a: &str, b: &str) -> bool {
