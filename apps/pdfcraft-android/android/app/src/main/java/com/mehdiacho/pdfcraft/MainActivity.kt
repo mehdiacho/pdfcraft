@@ -2,6 +2,7 @@ package com.mehdiacho.pdfcraft
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +14,9 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.google.androidgamesdk.GameActivity
 import java.io.File
 import java.util.concurrent.Executors
@@ -74,7 +78,32 @@ class MainActivity : GameActivity() {
             Log.w(TAG, "couldn't set TMPDIR", e)
         }
         super.onCreate(savedInstanceState)
+        keepClearOfSystemBars()
         if (savedInstanceState == null) handleIntent(intent)
+    }
+
+    /**
+     * GameActivity draws edge to edge, under the status bar, navigation bar, notch and keyboard.
+     * The app isn't laid out for that, so pad the surface's container by those insets: the
+     * surface shrinks to the free area and the window background (the title bar's colour) fills
+     * the bars. The insets still reach GameActivity, which tells the native side about them.
+     */
+    private fun keepClearOfSystemBars() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !night
+            isAppearanceLightNavigationBars = !night
+        }
+        val content = findViewById<android.view.View>(android.R.id.content)
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime(),
+            )
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
