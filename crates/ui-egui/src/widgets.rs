@@ -41,6 +41,14 @@ pub fn show_modal<R>(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut eg
     })
 }
 
+/// The widest a dialog's content may be in this window: the screen less the card's padding and
+/// an 8-point margin each side. Desktop windows are wider than every dialog, so only the compact
+/// (phone) layout is ever narrowed by it.
+pub fn dialog_max_width(ctx: &egui::Context) -> f32 {
+    let w = ctx.content_rect().width();
+    if w.is_finite() { (w - 2.0 * (f32::from(DIALOG_PAD_X) + 8.0)).max(160.0) } else { f32::INFINITY }
+}
+
 /// Outlined controls at a shared 30-point height, with a focus stroke and 4-point corners.
 ///
 /// Dialog fills match the theme's field colour, so radio buttons, check boxes, combo boxes

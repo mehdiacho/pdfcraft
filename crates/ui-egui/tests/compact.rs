@@ -311,6 +311,17 @@ fn a_wide_window_keeps_the_desktop_layout() {
 }
 
 #[test]
+fn about_fits_the_phone_screen() {
+    let mut h = phone(|_| {});
+    nav_item(&h, "Settings").click();
+    h.run_steps(2);
+    h.get_by_label("About PdfCraft").click();
+    h.run_steps(4);
+    h.get_by_label("This Android app on GitHub");
+    assert_fits(&h);
+}
+
+#[test]
 fn a_phone_held_sideways_keeps_the_phone_layout() {
     let mut h = Harness::builder().with_size(egui::vec2(914.0, 411.0)).build_eframe(|_cc| {
         let mut app = PdfCraftApp::new();
@@ -346,6 +357,8 @@ fn phone_screenshots() {
     shoot(&mut h, "tools");
     nav_item(&h, "Settings").click();
     shoot(&mut h, "settings");
+    h.get_by_label("About PdfCraft").click();
+    shoot(&mut h, "about");
     let mut h = build(|app| {
         let form = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/form.pdf")).unwrap();
         app.open_bytes("form.pdf", None, form).unwrap();
