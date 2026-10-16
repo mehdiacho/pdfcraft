@@ -89,6 +89,19 @@ impl Fling {
         }
     }
 
+    /// Glides on at a finger's speed as it lifted off a touch screen (see `touch_pan`), in points
+    /// per second with positive moving the content down. Unlike a touchpad's, a touch screen's
+    /// flick is the app's to glide on every platform, so this ignores [`Fling::enabled`].
+    pub(crate) fn launch(&mut self, velocity: Vec2, now: f64) {
+        self.samples.clear();
+        self.stop();
+        if !(velocity.x.is_finite() && velocity.y.is_finite()) || velocity.length() < START_SPEED {
+            return;
+        }
+        self.velocity = if velocity.length() > MAX_SPEED { velocity * (MAX_SPEED / velocity.length()) } else { velocity };
+        self.at = now;
+    }
+
     fn push(&mut self, now: f64, delta: Vec2) {
         if !(delta.x.is_finite() && delta.y.is_finite()) {
             return;

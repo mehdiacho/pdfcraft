@@ -403,6 +403,8 @@ pub struct DocView {
     precise_scroll_until: f64,
     /// Touchpad momentum after the fingers lift (#531).
     fling: crate::fling::Fling,
+    /// A finger panning the pages on a touch screen; its flick glides through `fling`.
+    touch_pan: crate::touch_pan::TouchPan,
     pub(crate) auto_scroll: crate::autoscroll::AutoScroll,
     /// Pages selected in the organize grid or the Pages panel (0-based). Empty means "the current page".
     pub selected: BTreeSet<usize>,
@@ -666,6 +668,7 @@ impl DocView {
             wheel: Default::default(),
             precise_scroll_until: 0.0,
             fling: Default::default(),
+            touch_pan: Default::default(),
             auto_scroll: Default::default(),
             selected: BTreeSet::new(),
             select_anchor: None,
@@ -2417,6 +2420,14 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     if !may_glide || interrupted || key_scroll != 0.0 || auto_delta != Vec2::ZERO || zoom_delta != 1.0 {
         view.fling.stop();
     }
+    // A finger on the pages pans them with the reading tools, and a flick glides on; the tools
+    // that draw keep their drags. With Select, a long press selects text instead.
+    let touch_pans = matches!(app.quick_tool, QuickTool::Select | QuickTool::Hand) && !middle_gesture && navigation_enabled && unobstructed;
+    let long_press = (app.quick_tool == QuickTool::Select).then(|| ui.ctx().options(|o| o.input_options.max_click_duration));
+    let touch = ui.input(|i| view.touch_pan.read(&i.events, now, avail, touch_pans, long_press));
+    if let Some(v) = touch.lift.filter(|_| may_glide) {
+        view.fling.launch(v, now);
+    }
     let glide = view.fling.step(now);
     if view.fling.gliding() {
         ui.ctx().request_repaint();
@@ -2486,10 +2497,11 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     view.current_scale_tag = tag;
     let hand = app.quick_tool == QuickTool::Hand;
     let tool = app.quick_tool;
+    let touch_owned = view.touch_pan.owns_drag();
     // Text selection runs for the Select tool and for the markup tools (highlight…).
     let selects_text = match tool {
         QuickTool::Comment(t) => t.markup().is_some() || t == comments::CommentTool::ReplaceText,
-        QuickTool::Select => !preparing,
+        QuickTool::Select => !preparing && !touch_owned,
         QuickTool::Redact | QuickTool::ColumnSelect => true,
         QuickTool::Hand
         | QuickTool::Measure(_)
@@ -2592,7 +2604,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // Middle-button auto-scroll, the keyboard, precise touchpad input (#759) and its glide
         // (#531), and a drawing's edge scroll; positive y moves the content down. All scroll
         // without easing, unlike egui's wheel default.
-        let delta = auto_delta + edge_delta - vec2(0.0, key_scroll) + precise_scroll + glide;
+        let delta = auto_delta + edge_delta - vec2(0.0, key_scroll) + precise_scroll + glide + touch.delta;
         if delta != Vec2::ZERO {
             ui.scroll_with_delta_animation(delta, egui::style::ScrollAnimation::none());
         }
@@ -2601,8 +2613,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         if !resp.dragged_by(egui::PointerButton::Primary) {
             view.selection_drag = false;
         }
-        // The Hand tool pans: the content widget takes every drag, so scroll by its delta.
-        if hand {
+        // The Hand tool pans: the content widget takes every drag, so scroll by its delta. A
+        // finger's drag has already panned above.
+        if hand && !touch_owned {
             if resp.dragged() {
                 ui.scroll_with_delta(resp.drag_delta());
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);

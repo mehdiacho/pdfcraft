@@ -110,6 +110,7 @@ mod pickers;
 pub mod prepare;
 mod print_ui;
 mod signature_drag;
+mod touch_pan;
 pub mod units;
 mod web_print;
 mod word_count_ui;

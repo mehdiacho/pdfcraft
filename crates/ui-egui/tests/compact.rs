@@ -376,3 +376,105 @@ fn phone_screenshots() {
     nav_item(&h, "Fill & Sign").click();
     shoot(&mut h, "document-fill-sign");
 }
+
+/// A document of `n` portrait pages, long enough to scroll on a phone.
+fn long_document(n: usize) -> Vec<u8> {
+    let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 10 + i)).collect();
+    let mut pdf = format!(
+        "%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [{}] /Count {n} >> endobj\n",
+        kids.join(" ")
+    );
+    for i in 0..n {
+        pdf += &format!("{} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] >> endobj\n", 10 + i);
+    }
+    pdf += "trailer << /Root 1 0 R >>\n%%EOF";
+    pdf.into_bytes()
+}
+
+/// Where the first page's top edge would sit on screen, worked out from the pages drawn.
+fn first_page_top(h: &Harness<'static, PdfCraftApp>) -> f32 {
+    let mut r = h.state().views[0].visible_page_rects();
+    r.sort_by_key(|(p, _)| *p);
+    let (p, first) = r[0];
+    let pitch = if r.len() > 1 { r[1].1.top() - first.top() } else { first.height() };
+    first.top() - p as f32 * pitch
+}
+
+/// A flick as a phone delivers it: the finger goes down, travels and lifts within `frames`
+/// frames, so on a slow phone several moves arrive in each one. (`Harness::event` would give
+/// every event a frame of its own.)
+fn flick(h: &mut Harness<'static, PdfCraftApp>, from: egui::Pos2, to: egui::Pos2, frames: usize, moves: usize) {
+    let device_id = egui::TouchDeviceId(1);
+    let id = egui::TouchId(0);
+    let touch = |phase, pos| egui::Event::Touch { device_id, id, phase, pos, force: None };
+    let primary = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+    let events = &mut h.input_mut().events;
+    events.extend([touch(egui::TouchPhase::Start, from), egui::Event::PointerMoved(from), primary(from, true)]);
+    for i in 1..=moves {
+        let pos = from + (to - from) * (i as f32 / moves as f32);
+        h.input_mut().events.extend([touch(egui::TouchPhase::Move, pos), egui::Event::PointerMoved(pos)]);
+        if i * frames / moves != (i - 1) * frames / moves {
+            h.step();
+        }
+    }
+    h.input_mut().events.extend([touch(egui::TouchPhase::End, to), primary(to, false), egui::Event::PointerGone]);
+    h.step();
+}
+
+/// A long document open on a phone drawing `fps` frames a second, with the Hand tool or Select.
+fn reader(tool_hand: bool, fps: f32) -> Harness<'static, PdfCraftApp> {
+    let mut h = Harness::builder().with_size(PHONE).with_step_dt(1.0 / fps).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("long.pdf", None, long_document(12)).expect("fixture opens");
+        if tool_hand {
+            app.quick_tool = pdfcraft_ui_egui::QuickTool::Hand;
+        }
+        app
+    });
+    h.run_steps(10);
+    h
+}
+
+#[test]
+fn a_quick_flick_scrolls_the_pages_and_glides_on() {
+    // (Hand tool, frames a second, frames the flick takes, moves the phone reports)
+    for (hand, fps, frames, moves) in [(false, 60.0, 12, 24), (true, 60.0, 12, 24), (false, 60.0, 3, 24), (false, 12.0, 2, 24), (true, 12.0, 1, 24)] {
+        let mut h = reader(hand, fps);
+        let before = first_page_top(&h);
+        flick(&mut h, egui::pos2(200.0, 700.0), egui::pos2(200.0, 300.0), frames, moves);
+        let lifted = first_page_top(&h);
+        h.run_steps(fps as usize);
+        let after = first_page_top(&h);
+        let case = format!("hand={hand} {fps} fps, {frames} frames");
+        // At least as far as the finger went; the glide may already have begun.
+        assert!(before - lifted > 398.0, "{case}: the pages follow the finger ({before} → {lifted})");
+        assert!(lifted - after > 100.0, "{case}: the pages glide on after the finger lifts ({lifted} → {after})");
+    }
+}
+
+#[test]
+fn a_slow_drag_stops_where_the_finger_lifts() {
+    let mut h = reader(false, 60.0);
+    let before = first_page_top(&h);
+    flick(&mut h, egui::pos2(200.0, 700.0), egui::pos2(200.0, 600.0), 60, 60);
+    h.run_steps(20);
+    flick(&mut h, egui::pos2(200.0, 600.0), egui::pos2(200.0, 600.0), 1, 1);
+    h.run_steps(30);
+    let after = first_page_top(&h);
+    assert!((before - after - 100.0).abs() < 2.0, "{before} → {after}");
+}
+
+#[test]
+fn the_phone_tool_sheet_has_no_ready_badges() {
+    let mut h = phone(|app| {
+        app.open_bytes("lease.pdf", None, FIXTURE.to_vec()).expect("fixture opens");
+    });
+    h.run_steps(4);
+    nav_item(&h, "Fill & Sign").click();
+    h.run_steps(4);
+    assert_eq!(h.state().compact.sheet, Some(Sheet::Tool));
+    let text = painted_text(&h);
+    assert!(text.iter().any(|(s, _)| s == "Fill in form fields" || s.starts_with("Fill")), "the sheet lists the tools: {text:?}");
+    assert!(!text.iter().any(|(s, _)| s == "Ready"), "no badge on every row");
+}
