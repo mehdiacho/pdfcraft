@@ -1,22 +1,26 @@
 //! The compact layout for phones and narrow windows (the Android app's design, `Main`, `Tools`,
 //! `Settings`, `Viewer` and `Contents` boards).
 //!
-//! Below [`COMPACT_WIDTH`] points the desktop chrome doesn't fit: the tab strip, mode bar, rail
+//! Below [`COMPACT_WIDTH`] points wide, or [`COMPACT_HEIGHT`] tall (a phone held sideways), the
+//! desktop chrome doesn't fit: the tab strip, mode bar, rail
 //! and docked side panels give way to one app bar at the top and a bottom navigation bar, and
 //! the side panels become full-width pages and bottom sheets. The switch is a pure function of
-//! the window's width ([`is_compact`]), so a narrow desktop window gets the same layout and tests
+//! the window's size ([`is_compact`]), so a narrow desktop window gets the same layout and tests
 //! can drive it. The desktop state (mode, docking, open panels) is left alone, so widening the
 //! window brings the desktop layout back as it was.
 
-use egui::{Color32, CornerRadius, Rect, Sense, Stroke, vec2};
+use egui::{Color32, CornerRadius, Rect, Sense, Stroke, Vec2, vec2};
 use pdfcraft_engine::catalog::{self, TOOL_GROUPS, ToolGroup};
 
 use crate::theme::{self, ThemePreference, Tokens};
 use crate::{Dialog, LeftPanel, PdfCraftApp, QuickTool, RightPanel, icons};
 
-/// Windows narrower than this (in points) use the compact layout: every phone held upright, and
-/// most held sideways, but no tablet or desktop window at its usual size.
+/// Windows narrower than this (in points) use the compact layout: every phone held upright, but
+/// no tablet or desktop window at its usual size.
 pub const COMPACT_WIDTH: f32 = 600.0;
+/// Windows shorter than this also do: a phone held sideways is 800–950 points wide but only
+/// 360–430 tall, too short for the desktop's stacked bars. Tablets held sideways are 600 or more.
+pub const COMPACT_HEIGHT: f32 = 480.0;
 
 /// The design's touch target and bar heights.
 const TOUCH: f32 = 48.0;
@@ -25,15 +29,16 @@ const NAV_BAR: f32 = 72.0;
 /// Side margin of the compact pages.
 const GUTTER: f32 = 16.0;
 
-/// Whether a window `width` points wide uses the compact layout.
-pub fn is_compact(width: f32) -> bool {
-    width.is_finite() && width < COMPACT_WIDTH
+/// Whether a window of `size` points uses the compact layout. An unknown (non-finite) side
+/// doesn't count.
+pub fn is_compact(size: Vec2) -> bool {
+    (size.x.is_finite() && size.x < COMPACT_WIDTH) || (size.y.is_finite() && size.y < COMPACT_HEIGHT)
 }
 
 /// Whether this frame lays out compactly (for widgets deep in the tree, such as menus that would
 /// otherwise show keyboard shortcuts).
 pub(crate) fn active(ctx: &egui::Context) -> bool {
-    is_compact(ctx.content_rect().width())
+    is_compact(ctx.content_rect().size())
 }
 
 /// The page the bottom navigation bar shows. With a document open, [`Page::Home`] is the document.
@@ -496,7 +501,7 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
         // Open a file, and Create beside it.
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            let create_w = 120.0_f32.min(ui.available_width() * 0.4);
+            let create_w = 136.0_f32.min(ui.available_width() * 0.4);
             let open_w = (ui.available_width() - create_w - 10.0).max(0.0);
             let (rect, resp) = ui.allocate_exact_size(vec2(open_w, 56.0), Sense::click());
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Open file")));
@@ -562,7 +567,8 @@ fn home(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
 
         section_heading(ui, t, tl!("Recent"));
         if app.recent.is_empty() {
-            ui.label(egui::RichText::new(tl!("Files you open in PdfCraft appear here. Drop a PDF anywhere to open it.")).color(t.text_muted));
+            // Not the desktop's "Drop a PDF anywhere": a phone has nothing to drop from.
+            ui.label(egui::RichText::new(tl!("No recent files")).color(t.text_muted));
         } else {
             card(ui, t, |ui| {
                 let last = app.recent.len().saturating_sub(1);
@@ -790,14 +796,18 @@ mod tests {
 
     /// Phones are compact held either way; tablets and desktop windows are not.
     #[test]
-    fn compact_below_six_hundred_points() {
-        assert!(is_compact(360.0));
-        assert!(is_compact(411.0));
-        assert!(is_compact(599.9));
-        assert!(!is_compact(600.0));
-        assert!(!is_compact(1280.0));
-        assert!(!is_compact(f32::NAN), "an unknown width keeps the desktop layout");
-        assert!(!is_compact(f32::INFINITY));
+    fn compact_below_six_hundred_points_wide_or_480_tall() {
+        assert!(is_compact(vec2(360.0, 780.0)));
+        assert!(is_compact(vec2(411.0, 914.0)));
+        assert!(is_compact(vec2(599.9, 900.0)));
+        assert!(is_compact(vec2(914.0, 411.0)), "a phone held sideways");
+        assert!(is_compact(vec2(800.0, 479.9)));
+        assert!(!is_compact(vec2(600.0, 800.0)));
+        assert!(!is_compact(vec2(1280.0, 800.0)), "a tablet held sideways");
+        assert!(!is_compact(vec2(1024.0, 600.0)));
+        assert!(!is_compact(vec2(f32::NAN, f32::NAN)), "an unknown size keeps the desktop layout");
+        assert!(!is_compact(vec2(f32::INFINITY, 900.0)));
+        assert!(is_compact(vec2(f32::NAN, 411.0)), "the known side still counts");
     }
 
     /// Every catalogue tool is under one of the All tools page's families.

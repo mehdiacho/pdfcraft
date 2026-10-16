@@ -310,6 +310,18 @@ fn a_wide_window_keeps_the_desktop_layout() {
     assert!(h.query_by_label("Settings").is_none(), "no bottom bar at 600 points");
 }
 
+#[test]
+fn a_phone_held_sideways_keeps_the_phone_layout() {
+    let mut h = Harness::builder().with_size(egui::vec2(914.0, 411.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.query_all_by_label("Settings").any(|n| n.rect().top() > 411.0 - 80.0), "the bottom bar is there");
+    assert!(h.query_by_label("Menu").is_none(), "no desktop tab strip on a sideways phone");
+}
+
 /// `PDFCRAFT_PHONE_SHOTS=dir` saves the phone layout's screens there, at the emulator's density.
 #[test]
 fn phone_screenshots() {
