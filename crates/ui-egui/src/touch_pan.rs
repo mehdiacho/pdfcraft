@@ -19,7 +19,7 @@ const WINDOW: f64 = 0.1;
 /// [`MAX_STILL`]), is a finger that stopped first: no glide. A finger resting sends nothing, so
 /// its lift can be the first pass in a while.
 const STILL: f64 = 0.05;
-const MAX_STILL: f64 = 0.2;
+const MAX_STILL: f64 = 0.3;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum State {

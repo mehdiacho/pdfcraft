@@ -3102,6 +3102,16 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                             }
                         }
                     }
+                    // A long press on a touch screen selects the word under the finger, as on a
+                    // phone; egui shows the context menu with it, where Copy now applies.
+                    if resp.long_touched()
+                        && tool == QuickTool::Select
+                        && over_text
+                        && !over_link
+                        && let Some((first, last)) = text.nearest(vx, vy).and_then(|a| click_unit(&text, 2, a))
+                    {
+                        view.selection = Some(Selection::run(i, first, last));
+                    }
                     if resp.drag_started() && press_here && !over_link {
                         view.selection_drag = true;
                         let origin = ui.input(|inp| inp.pointer.press_origin()).unwrap_or(p);

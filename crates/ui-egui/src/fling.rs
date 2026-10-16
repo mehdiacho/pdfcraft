@@ -23,8 +23,9 @@ const STOP_SPEED: f32 = 10.0;
 /// Fastest glide, in points per second: a flick the system measured over a hiccup can't throw
 /// the document to its end.
 const MAX_SPEED: f32 = 8000.0;
-/// A pass this long after the last one (the view was hidden, the app stalled) ends a glide.
-const STALE: f64 = 0.1;
+/// A pass this long after the last one (the view was hidden, the app stalled) ends a glide. A
+/// slow phone or emulator draws a few frames a second and must still glide.
+const STALE: f64 = 0.5;
 
 pub(crate) struct Fling {
     /// Whether a lift glides on this platform (see the module docs).

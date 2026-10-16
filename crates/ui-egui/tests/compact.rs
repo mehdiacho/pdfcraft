@@ -439,7 +439,9 @@ fn reader(tool_hand: bool, fps: f32) -> Harness<'static, PdfCraftApp> {
 #[test]
 fn a_quick_flick_scrolls_the_pages_and_glides_on() {
     // (Hand tool, frames a second, frames the flick takes, moves the phone reports)
-    for (hand, fps, frames, moves) in [(false, 60.0, 12, 24), (true, 60.0, 12, 24), (false, 60.0, 3, 24), (false, 12.0, 2, 24), (true, 12.0, 1, 24)] {
+    for (hand, fps, frames, moves) in
+        [(false, 60.0, 12, 24), (true, 60.0, 12, 24), (false, 60.0, 3, 24), (false, 12.0, 2, 24), (true, 12.0, 1, 24), (false, 4.0, 1, 24)]
+    {
         let mut h = reader(hand, fps);
         let before = first_page_top(&h);
         flick(&mut h, egui::pos2(200.0, 700.0), egui::pos2(200.0, 300.0), frames, moves);
@@ -477,4 +479,40 @@ fn the_phone_tool_sheet_has_no_ready_badges() {
     let text = painted_text(&h);
     assert!(text.iter().any(|(s, _)| s == "Fill in form fields" || s.starts_with("Fill")), "the sheet lists the tools: {text:?}");
     assert!(!text.iter().any(|(s, _)| s == "Ready"), "no badge on every row");
+}
+
+/// One page with a line of text.
+fn text_document() -> Vec<u8> {
+    let content = "BT /F1 24 Tf 50 300 Td (Hello world) Tj ET";
+    format!(
+        "%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >> endobj\n4 0 obj << /Length {} >> stream\n{content}\nendstream endobj\n5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF",
+        content.len()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_long_press_selects_the_word_under_the_finger() {
+    let mut h = Harness::builder().with_size(PHONE).with_step_dt(1.0 / 60.0).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("hello.pdf", None, text_document()).expect("fixture opens");
+        app
+    });
+    h.run_steps(30);
+    let page = h.state().views[0].visible_page_rects()[0].1;
+    // Inside "Hello": 60 points from the left, 90 down a 400-point page.
+    let at = egui::pos2(page.left() + page.width() * 60.0 / 300.0, page.top() + page.height() * 90.0 / 400.0);
+    let touch = |phase| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(0), phase, pos: at, force: None };
+    h.input_mut().events.extend([
+        touch(egui::TouchPhase::Start),
+        egui::Event::PointerMoved(at),
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+    ]);
+    h.step();
+    for _ in 0..70 {
+        h.input_mut().events.push(touch(egui::TouchPhase::Move));
+        h.step();
+    }
+    assert_eq!(h.state().views[0].selected_text().as_deref(), Some("Hello"));
 }
