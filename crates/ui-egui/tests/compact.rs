@@ -516,3 +516,42 @@ fn a_long_press_selects_the_word_under_the_finger() {
     }
     assert_eq!(h.state().views[0].selected_text().as_deref(), Some("Hello"));
 }
+
+#[test]
+fn a_long_press_shows_the_selection_bar_on_screen_with_no_menu_over_it() {
+    let mut h = Harness::builder().with_size(PHONE).with_step_dt(1.0 / 60.0).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("hello.pdf", None, text_document()).expect("fixture opens");
+        app
+    });
+    h.run_steps(30);
+    let page = h.state().views[0].visible_page_rects()[0].1;
+    let at = egui::pos2(page.left() + page.width() * 60.0 / 300.0, page.top() + page.height() * 90.0 / 400.0);
+    let touch = |phase| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(0), phase, pos: at, force: None };
+    h.input_mut().events.extend([
+        touch(egui::TouchPhase::Start),
+        egui::Event::PointerMoved(at),
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+    ]);
+    h.step();
+    for _ in 0..70 {
+        h.input_mut().events.push(touch(egui::TouchPhase::Move));
+        h.step();
+    }
+    h.input_mut().events.extend([
+        touch(egui::TouchPhase::End),
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() },
+        egui::Event::PointerGone,
+    ]);
+    h.run_steps(5);
+    assert_eq!(h.state().views[0].selected_text().as_deref(), Some("Hello"));
+    assert!(h.query_by_label("Add a sticky note here").is_none(), "no context menu over the bar");
+    for label in ["Copy", "Strikethrough", "Replace text"] {
+        let rects: Vec<egui::Rect> = h.query_all_by_label(label).map(|n| n.rect()).collect();
+        assert!(!rects.is_empty(), "{label} is offered");
+        for r in rects {
+            assert!(r.left() >= 0.0 && r.right() <= PHONE.x, "{label} is on screen: {r:?}");
+        }
+    }
+}
