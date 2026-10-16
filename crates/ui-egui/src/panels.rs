@@ -232,11 +232,20 @@ fn tool_detail(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens, g: &'static
                 };
                 let font = theme::semibold(9.5);
                 let chip_label = tl!(chip).to_string();
-                let w = crate::widgets::text_width(ui, &chip_label, &font);
-                let r = Rect::from_center_size(body.right_center() - vec2(w / 2.0 + 10.0, 0.0), vec2(w + 10.0, 16.0));
+                // A phone has no room for a badge on every row; it keeps the ones that say a
+                // tool is not there yet.
+                let chip_shown = !(ready && crate::compact::active(ui.ctx()));
+                let w = if chip_shown { crate::widgets::text_width(ui, &chip_label, &font) } else { 0.0 };
+                let r = if chip_shown {
+                    Rect::from_center_size(body.right_center() - vec2(w / 2.0 + 10.0, 0.0), vec2(w + 10.0, 16.0))
+                } else {
+                    Rect::from_center_size(body.right_center() - vec2(14.0, 0.0), vec2(0.0, 16.0))
+                };
                 row_label(ui, tl!(item.label), theme::regular(13.0), fg, body.left_center() + vec2(34.0, 0.0), r.left() - body.left() - 42.0);
-                ui.painter().rect_filled(r, CornerRadius::same(4), fill);
-                ui.painter().text(r.center(), Align2::CENTER_CENTER, chip_label, font, cfg);
+                if chip_shown {
+                    ui.painter().rect_filled(r, CornerRadius::same(4), fill);
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, chip_label, font, cfg);
+                }
                 let resp = theme::hand(resp).on_hover_text(format!("{} — {}", tl!(item.label), item.command));
                 if item.actions.is_empty() {
                     if resp.clicked() {

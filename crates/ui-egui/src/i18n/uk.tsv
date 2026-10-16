@@ -94,7 +94,6 @@
 	Side panels	Бічні панелі
 	Enable Acrobat JavaScript	Увімкнути Acrobat JavaScript
 	OK	OK
-	Join our Discord	Приєднатися до нашого Discord
 	Close	Закрити
 	Next / previous match	Наступний / попередній збіг
 	Copy selected text	Копіювати виділений текст
@@ -162,8 +161,6 @@
 	Current page — type a page number or label (such as iv) and press Enter	Поточна сторінка — введіть номер або позначку сторінки (наприклад iv) і натисніть Enter
 	Welcome to PdfCraft	Вітаємо в PdfCraft
 	An open-source PDF workbench — local, private, and scriptable.	Відкритий інструментарій для PDF — локальний, приватний і з підтримкою сценаріїв.
-	Join the ArtCraft community	Приєднатися до спільноти ArtCraft
-	Get help, share feedback and follow development on Discord.	Отримуйте допомогу, діліться відгуками й стежте за розробкою в Discord.
 	Recommended tools	Рекомендовані інструменти
 	Use now	Використати зараз
 	Open file	Відкрити файл
@@ -308,10 +305,8 @@
 	Split document…	Розділити документ…
 	Number pages…	Пронумерувати сторінки…
 	Keyboard shortcuts	Клавіатурні скорочення
-	Join the ArtCraft Discord	Приєднатися до Discord ArtCraft
-	PdfCraft web page	Вебсторінка PdfCraft
+	This Android app on GitHub	Цей застосунок для Android на GitHub
 	PdfCraft on GitHub	PdfCraft на GitHub
-	ArtCraft website	Вебсайт ArtCraft
 	Check for updates…	Перевірити оновлення…
 	About PdfCraft	Про PdfCraft
 	Export a PDF	Експортувати PDF
@@ -2450,3 +2445,5 @@ animation effects	Off	Вимкнено
 	Make properties default	Зробити властивості типовими
 	Pages selected	Вибрані сторінки
 	Page properties	Властивості сторінки
+	Comment	Коментар
+	Tools	Інструменти

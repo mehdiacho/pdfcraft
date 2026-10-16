@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PdfCraft</string>
+    <string name="saved_to">Saved %1$s</string>
+    <string name="save_failed">Couldn\'t save %1$s: %2$s</string>
+</resources>

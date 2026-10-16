@@ -403,6 +403,8 @@ pub struct DocView {
     precise_scroll_until: f64,
     /// Touchpad momentum after the fingers lift (#531).
     fling: crate::fling::Fling,
+    /// A finger panning the pages on a touch screen; its flick glides through `fling`.
+    touch_pan: crate::touch_pan::TouchPan,
     pub(crate) auto_scroll: crate::autoscroll::AutoScroll,
     /// Pages selected in the organize grid or the Pages panel (0-based). Empty means "the current page".
     pub selected: BTreeSet<usize>,
@@ -666,6 +668,7 @@ impl DocView {
             wheel: Default::default(),
             precise_scroll_until: 0.0,
             fling: Default::default(),
+            touch_pan: Default::default(),
             auto_scroll: Default::default(),
             selected: BTreeSet::new(),
             select_anchor: None,
@@ -2417,6 +2420,14 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     if !may_glide || interrupted || key_scroll != 0.0 || auto_delta != Vec2::ZERO || zoom_delta != 1.0 {
         view.fling.stop();
     }
+    // A finger on the pages pans them with the reading tools, and a flick glides on; the tools
+    // that draw keep their drags. With Select, a long press selects text instead.
+    let touch_pans = matches!(app.quick_tool, QuickTool::Select | QuickTool::Hand) && !middle_gesture && navigation_enabled && unobstructed;
+    let long_press = (app.quick_tool == QuickTool::Select).then(|| ui.ctx().options(|o| o.input_options.max_click_duration));
+    let touch = ui.input(|i| view.touch_pan.read(&i.events, now, avail, touch_pans, long_press));
+    if let Some(v) = touch.lift.filter(|_| may_glide) {
+        view.fling.launch(v, now);
+    }
     let glide = view.fling.step(now);
     if view.fling.gliding() {
         ui.ctx().request_repaint();
@@ -2486,10 +2497,11 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     view.current_scale_tag = tag;
     let hand = app.quick_tool == QuickTool::Hand;
     let tool = app.quick_tool;
+    let touch_owned = view.touch_pan.owns_drag();
     // Text selection runs for the Select tool and for the markup tools (highlight…).
     let selects_text = match tool {
         QuickTool::Comment(t) => t.markup().is_some() || t == comments::CommentTool::ReplaceText,
-        QuickTool::Select => !preparing,
+        QuickTool::Select => !preparing && !touch_owned,
         QuickTool::Redact | QuickTool::ColumnSelect => true,
         QuickTool::Hand
         | QuickTool::Measure(_)
@@ -2592,7 +2604,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // Middle-button auto-scroll, the keyboard, precise touchpad input (#759) and its glide
         // (#531), and a drawing's edge scroll; positive y moves the content down. All scroll
         // without easing, unlike egui's wheel default.
-        let delta = auto_delta + edge_delta - vec2(0.0, key_scroll) + precise_scroll + glide;
+        let delta = auto_delta + edge_delta - vec2(0.0, key_scroll) + precise_scroll + glide + touch.delta;
         if delta != Vec2::ZERO {
             ui.scroll_with_delta_animation(delta, egui::style::ScrollAnimation::none());
         }
@@ -2601,8 +2613,9 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         if !resp.dragged_by(egui::PointerButton::Primary) {
             view.selection_drag = false;
         }
-        // The Hand tool pans: the content widget takes every drag, so scroll by its delta.
-        if hand {
+        // The Hand tool pans: the content widget takes every drag, so scroll by its delta. A
+        // finger's drag has already panned above.
+        if hand && !touch_owned {
             if resp.dragged() {
                 ui.scroll_with_delta(resp.drag_delta());
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -2630,6 +2643,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // gone to earlier that still shows whole beside it.
         let pressed = unobstructed && ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(avail);
         let mut pressed_page = None;
+        let mut long_press_selected = false;
         if resp.secondary_clicked() {
             // Set again below when the right-click lands on a link.
             view.links.context = None;
@@ -3089,6 +3103,17 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
                             }
                         }
                     }
+                    // A long press on a touch screen selects the word under the finger, as on a
+                    // phone; egui shows the context menu with it, where Copy now applies.
+                    if resp.long_touched()
+                        && tool == QuickTool::Select
+                        && over_text
+                        && !over_link
+                        && let Some((first, last)) = text.nearest(vx, vy).and_then(|a| click_unit(&text, 2, a))
+                    {
+                        view.selection = Some(Selection::run(i, first, last));
+                        long_press_selected = true;
+                    }
                     if resp.drag_started() && press_here && !over_link {
                         view.selection_drag = true;
                         let origin = ui.input(|inp| inp.pointer.press_origin()).unwrap_or(p);
@@ -3338,114 +3363,118 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         if view.continuous {
             view.current = current;
         }
-        resp.context_menu(|ui| {
-            // Preparing a form: the selected field's menu.
-            if preparing && let Some((name, wi)) = view.prepare.selected.clone() {
-                // Several fields: Align, Center, Distribute, Set Fields to Same Size.
-                if !view.prepare.also.is_empty() {
-                    use crate::prepare::Arrange as A;
-                    let others = view.prepare.also.clone();
-                    let anchor = (name.clone(), wi);
-                    let mut pick = |ui: &mut egui::Ui, op: A, label: &str| {
-                        if ui.add_enabled(can_modify, egui::Button::new(tl!(label))).clicked() {
-                            view.pending_edit = crate::prepare::arrange(&form, &anchor, &others, op);
-                            ui.close();
+        // A long press that selected a word shows the selection's own bar (with Copy) alone, not
+        // the context menu over it.
+        if !long_press_selected {
+            resp.context_menu(|ui| {
+                // Preparing a form: the selected field's menu.
+                if preparing && let Some((name, wi)) = view.prepare.selected.clone() {
+                    // Several fields: Align, Center, Distribute, Set Fields to Same Size.
+                    if !view.prepare.also.is_empty() {
+                        use crate::prepare::Arrange as A;
+                        let others = view.prepare.also.clone();
+                        let anchor = (name.clone(), wi);
+                        let mut pick = |ui: &mut egui::Ui, op: A, label: &str| {
+                            if ui.add_enabled(can_modify, egui::Button::new(tl!(label))).clicked() {
+                                view.pending_edit = crate::prepare::arrange(&form, &anchor, &others, op);
+                                ui.close();
+                            }
+                        };
+                        ui.menu_button(tl!("Align"), |ui| {
+                            pick(ui, A::AlignLeft, "Left");
+                            pick(ui, A::AlignRight, "Right");
+                            pick(ui, A::AlignTop, "Top");
+                            pick(ui, A::AlignBottom, "Bottom");
+                            pick(ui, A::AlignCenterV, "Center vertically");
+                            pick(ui, A::AlignCenterH, "Center horizontally");
+                        });
+                        ui.menu_button(tl!("Distribute"), |ui| {
+                            pick(ui, A::DistributeH, "Horizontally");
+                            pick(ui, A::DistributeV, "Vertically");
+                        });
+                        ui.menu_button(tl!("Set Fields to Same Size"), |ui| {
+                            pick(ui, A::SameHeight, "Height");
+                            pick(ui, A::SameWidth, "Width");
+                            pick(ui, A::SameSize, "Both");
+                        });
+                        ui.separator();
+                    }
+                    if ui.button(tl!("Properties…")).clicked() {
+                        field_menu = Some(FieldMenu::Properties);
+                        ui.close();
+                    }
+                    if ui.add_enabled(can_modify, egui::Button::new(tl!("Duplicate…"))).clicked() {
+                        field_menu = Some(FieldMenu::Duplicate(name.clone()));
+                        ui.close();
+                    }
+                    ui.separator();
+                    let delete = if view.prepare.also.is_empty() { "Delete" } else { "Delete selected fields" };
+                    if ui.add_enabled(can_modify, egui::Button::new(tl!(delete))).clicked() {
+                        view.pending_edit = crate::prepare::delete_selected(view);
+                        ui.close();
+                    }
+                    return;
+                }
+                if let Some((page, index)) = view.links.context {
+                    if ui.button(tl!("Properties…")).clicked() {
+                        view.links.open_existing = Some((page, index));
+                        ui.close();
+                    }
+                    if ui.add_enabled(can_modify, egui::Button::new(tl!("Delete"))).clicked() {
+                        view.pending_edit = Some(Edit::DeleteLink { page, index });
+                        view.links.selected = None;
+                        view.links.context = None;
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.add_enabled(can_modify, egui::Button::new(tl!("Remove all links"))).clicked() {
+                        view.pending_edit = Some(Edit::RemoveLinks { pages: None });
+                        view.links.selected = None;
+                        view.links.context = None;
+                        ui.close();
+                    }
+                    return;
+                }
+                if view.comments.selected.is_none() {
+                    let selected = view.selected_text().is_some_and(|t| !t.is_empty());
+                    let key = crate::commands::shortcut_label(ui.ctx(), crate::commands::COPY);
+                    if ui.add_enabled(can_copy && selected, egui::Button::new(tl!("Copy")).shortcut_text(key)).clicked() {
+                        copy_selected = true;
+                        ui.close();
+                    }
+                    ui.separator();
+                }
+                // Over a picture (and no comment): Copy Image, as in Acrobat's page menu.
+                let mut copy_image = None;
+                if view.comments.selected.is_none()
+                    && let Some((page, at)) = view.comments.context_at
+                {
+                    // The page's content is parsed once per right-click, not on every frame the menu is open.
+                    let key = egui::Id::new("copy-image-under-menu");
+                    let cached = ui.data(|d| d.get_temp::<(usize, [f64; 2], Option<usize>)>(key)).filter(|c| c.0 == page && c.1 == at);
+                    let hit = match cached {
+                        Some(c) => c.2,
+                        None => {
+                            let hit = doc.page_image_at(page, at);
+                            ui.data_mut(|d| d.insert_temp(key, (page, at, hit)));
+                            hit
                         }
                     };
-                    ui.menu_button(tl!("Align"), |ui| {
-                        pick(ui, A::AlignLeft, "Left");
-                        pick(ui, A::AlignRight, "Right");
-                        pick(ui, A::AlignTop, "Top");
-                        pick(ui, A::AlignBottom, "Bottom");
-                        pick(ui, A::AlignCenterV, "Center vertically");
-                        pick(ui, A::AlignCenterH, "Center horizontally");
-                    });
-                    ui.menu_button(tl!("Distribute"), |ui| {
-                        pick(ui, A::DistributeH, "Horizontally");
-                        pick(ui, A::DistributeV, "Vertically");
-                    });
-                    ui.menu_button(tl!("Set Fields to Same Size"), |ui| {
-                        pick(ui, A::SameHeight, "Height");
-                        pick(ui, A::SameWidth, "Width");
-                        pick(ui, A::SameSize, "Both");
-                    });
-                    ui.separator();
-                }
-                if ui.button(tl!("Properties…")).clicked() {
-                    field_menu = Some(FieldMenu::Properties);
-                    ui.close();
-                }
-                if ui.add_enabled(can_modify, egui::Button::new(tl!("Duplicate…"))).clicked() {
-                    field_menu = Some(FieldMenu::Duplicate(name.clone()));
-                    ui.close();
-                }
-                ui.separator();
-                let delete = if view.prepare.also.is_empty() { "Delete" } else { "Delete selected fields" };
-                if ui.add_enabled(can_modify, egui::Button::new(tl!(delete))).clicked() {
-                    view.pending_edit = crate::prepare::delete_selected(view);
-                    ui.close();
-                }
-                return;
-            }
-            if let Some((page, index)) = view.links.context {
-                if ui.button(tl!("Properties…")).clicked() {
-                    view.links.open_existing = Some((page, index));
-                    ui.close();
-                }
-                if ui.add_enabled(can_modify, egui::Button::new(tl!("Delete"))).clicked() {
-                    view.pending_edit = Some(Edit::DeleteLink { page, index });
-                    view.links.selected = None;
-                    view.links.context = None;
-                    ui.close();
-                }
-                ui.separator();
-                if ui.add_enabled(can_modify, egui::Button::new(tl!("Remove all links"))).clicked() {
-                    view.pending_edit = Some(Edit::RemoveLinks { pages: None });
-                    view.links.selected = None;
-                    view.links.context = None;
-                    ui.close();
-                }
-                return;
-            }
-            if view.comments.selected.is_none() {
-                let selected = view.selected_text().is_some_and(|t| !t.is_empty());
-                let key = crate::commands::shortcut_label(ui.ctx(), crate::commands::COPY);
-                if ui.add_enabled(can_copy && selected, egui::Button::new(tl!("Copy")).shortcut_text(key)).clicked() {
-                    copy_selected = true;
-                    ui.close();
-                }
-                ui.separator();
-            }
-            // Over a picture (and no comment): Copy Image, as in Acrobat's page menu.
-            let mut copy_image = None;
-            if view.comments.selected.is_none()
-                && let Some((page, at)) = view.comments.context_at
-            {
-                // The page's content is parsed once per right-click, not on every frame the menu is open.
-                let key = egui::Id::new("copy-image-under-menu");
-                let cached = ui.data(|d| d.get_temp::<(usize, [f64; 2], Option<usize>)>(key)).filter(|c| c.0 == page && c.1 == at);
-                let hit = match cached {
-                    Some(c) => c.2,
-                    None => {
-                        let hit = doc.page_image_at(page, at);
-                        ui.data_mut(|d| d.insert_temp(key, (page, at, hit)));
-                        hit
+                    if let Some(image) = hit {
+                        if ui.button(tl!("Copy Image")).clicked() {
+                            copy_image = Some(comments::CanvasAction::CopyImage(page, image));
+                            ui.close();
+                        }
+                        if ui.button(tl!("Copy Image in Original Format")).clicked() {
+                            copy_image = Some(comments::CanvasAction::CopyImageFile(page, image));
+                            ui.close();
+                        }
+                        ui.separator();
                     }
-                };
-                if let Some(image) = hit {
-                    if ui.button(tl!("Copy Image")).clicked() {
-                        copy_image = Some(comments::CanvasAction::CopyImage(page, image));
-                        ui.close();
-                    }
-                    if ui.button(tl!("Copy Image in Original Format")).clicked() {
-                        copy_image = Some(comments::CanvasAction::CopyImageFile(page, image));
-                        ui.close();
-                    }
-                    ui.separator();
                 }
-            }
-            canvas_action = comments::context_menu(ui, view, info, prefs, allowed).or(copy_image);
-        });
+                canvas_action = comments::context_menu(ui, view, info, prefs, allowed).or(copy_image);
+            });
+        }
         (wanted, visible_now)
     });
     view.single_edges = visible_pages.first().copied().filter(|_| !view.continuous).map(|page| {
@@ -3805,12 +3834,18 @@ fn selection_actions(
     if !viewport.intersects(rect) {
         return false;
     }
-    let x = rect.left().clamp(viewport.left() + 8.0, (viewport.right() - 520.0).max(viewport.left() + 8.0));
+    // On a phone the bar wraps to the screen's width, Copy first; elsewhere it is one row.
+    let compact = crate::compact::active(ui.ctx());
+    let x =
+        if compact { viewport.left() + 8.0 } else { rect.left().clamp(viewport.left() + 8.0, (viewport.right() - 520.0).max(viewport.left() + 8.0)) };
     let y = if rect.bottom() + 48.0 < viewport.bottom() { rect.bottom() + 6.0 } else { (rect.top() - 44.0).max(viewport.top() + 6.0) };
     let mut chosen = None;
     egui::Area::new(egui::Id::new(("text-selection-actions", view.id.0))).order(egui::Order::Foreground).fixed_pos(pos2(x, y)).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            let mut buttons = |ui: &mut egui::Ui| {
+                if compact && ui.add_enabled(can_copy, egui::Button::new(tl!("Copy"))).clicked() {
+                    chosen = Some(SelectionAction::Copy);
+                }
                 for (label, action) in [
                     (tl!("Add comment"), SelectionAction::Note),
                     (tl!("Highlight"), SelectionAction::Markup(comments::CommentTool::Highlight)),
@@ -3822,10 +3857,17 @@ fn selection_actions(
                         chosen = Some(action);
                     }
                 }
-                if ui.add_enabled(can_copy, egui::Button::new(tl!("Copy"))).clicked() {
+                if !compact && ui.add_enabled(can_copy, egui::Button::new(tl!("Copy"))).clicked() {
                     chosen = Some(SelectionAction::Copy);
                 }
-            });
+            };
+            if compact {
+                // The frame's margins and the gutter on each side.
+                ui.set_max_width((viewport.width() - 32.0).max(120.0));
+                ui.horizontal_wrapped(|ui| buttons(ui));
+            } else {
+                ui.horizontal(|ui| buttons(ui));
+            }
         });
     });
     let Some(action) = chosen else { return false };

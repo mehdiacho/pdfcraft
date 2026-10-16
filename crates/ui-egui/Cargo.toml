@@ -28,7 +28,6 @@ log = { workspace = true }
 # Hands rendered rasters to egui as its pixels, without copying; already in the tree through egui and wgpu.
 bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 
-rfd = { workspace = true }
 png = "0.18"
 base64 = "0.22"
 # Right-to-left file names in the chrome (egui shapes but does not reorder); already in the tree.
@@ -37,11 +36,22 @@ unicode-bidi = "0.3"
 # that put fallback faces on the interface's baseline (#1676); the same skrifa egui uses.
 skrifa = "0.44"
 
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = { workspace = true }
+
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+# Create ▸ Clipboard (images; already in the tree through egui-winit).
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+
+# rfd and arboard have no Android backends: these crates stand in for them under their names
+# (src/lib.rs). The Android app answers picker requests with the system pickers (apps/pdfcraft-android).
+[target.'cfg(target_os = "android")'.dependencies]
+arboard_android = { package = "pdfcraft-clipboard-android", path = "../clipboard-android", version = "0.8.0" }
+rfd_android = { package = "pdfcraft-picker-android", path = "../picker-android", version = "0.8.0" }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Control-channel tokens.
 getrandom = "0.4"
-# Create ▸ Clipboard (images; already in the tree through egui-winit).
-arboard = { version = "3.6", default-features = false, features = ["image-data"] }
 # Waits for native file pickers off the UI thread (already in the tree through wgpu).
 pollster = "1.0"
 

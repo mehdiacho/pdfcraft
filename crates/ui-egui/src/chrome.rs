@@ -66,11 +66,8 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     app.active = None;
                     app.combine_tab.focused = false;
                 }
-                // Keep the two icon buttons, Discord's text/padding and three gaps outside the scrolling tabs.
-                let controls_width = ui.fonts_mut(|f| f.layout_no_wrap("Discord".into(), theme::medium(13.0), t.text).size().x)
-                    + 2.0 * button
-                    + 50.0
-                    + window_controls::width(&controls.right);
+                // Keep the two icon buttons and their two gaps outside the scrolling tabs.
+                let controls_width = 2.0 * button + 8.0 + window_controls::width(&controls.right);
                 // Open stays in sight after the tabs: its icon, text and padding, and the gaps around it.
                 let open_width = ui.fonts_mut(|f| f.layout_no_wrap(tl!("Open").into(), theme::medium(13.0), t.text).size().x) + 38.0 + 12.0;
                 let mut tabs_width = (ui.available_width() - controls_width - open_width).max(0.0);
@@ -298,17 +295,13 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                     if icons::button(ui, "circle-help", button, false, tl!("Keyboard shortcuts")).clicked() {
                         app.dialog = Some(Dialog::Shortcuts);
                     }
-                    // One click to the community, from anywhere in the app.
-                    if widgets::ghost_button_sized(ui, "messages-square", "Discord", tab_h).on_hover_text(pdfcraft_engine::links::DISCORD).clicked() {
-                        app.execute("help.discord");
-                    }
                 });
             });
         });
 }
 
 /// Both theme entry points use the same choices and command path.
-fn theme_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+pub(crate) fn theme_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     for (preference, command, label) in [
         (ThemePreference::System, "view.theme.system", "Use system setting"),
         (ThemePreference::Light, "view.theme.light", "Light gray"),
