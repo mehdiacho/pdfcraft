@@ -1,0 +1,32 @@
+[package]
+name = "pdfcraft-android"
+description = "PdfCraft for Android: the egui app in a GameActivity (built by the Gradle project in android/, see README.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Not `workspace = true`: the JNI bridge (src/jni_bridge.rs) needs `unsafe` to borrow the
+# JavaVM and Activity pointers android-activity hands over, which the workspace forbids.
+# Everything else in the crate keeps the workspace's rules.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[lib]
+name = "pdfcraft_android"
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+pdfcraft-ui-egui = { workspace = true }
+pdfcraft-picker-android = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "persistence", "android-game-activity"] }
+log = { workspace = true }
+# The Activity handle eframe runs in; the same vendored winit eframe uses.
+winit = { version = "0.30", default-features = false, features = ["android-game-activity"] }
+android_logger = "0.15"
+jni = "0.21"

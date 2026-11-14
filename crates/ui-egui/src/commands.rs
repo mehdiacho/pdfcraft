@@ -795,7 +795,13 @@ pub(crate) fn registry_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui, menu: &str
             }
             continue;
         }
-        let shortcut = spec.shortcut.or((spec.id == "edit.copy").then_some(COPY)).map(|s| shortcut_label(ui.ctx(), s)).unwrap_or_default();
+        // Phones have no keyboard to press them on: the compact layout shows no shortcuts.
+        let shortcut = spec
+            .shortcut
+            .or((spec.id == "edit.copy").then_some(COPY))
+            .filter(|_| !crate::compact::active(ui.ctx()))
+            .map(|s| shortcut_label(ui.ctx(), s))
+            .unwrap_or_default();
         let enabled = app.command_enabled(spec);
         let resp = ui.add_enabled(enabled, egui::Button::new(label).shortcut_text(shortcut));
         if resp.clicked() {

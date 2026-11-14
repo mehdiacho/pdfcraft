@@ -81,6 +81,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("ui-common", Class::Layer(7)),
     ("ui-egui", Class::Layer(7)),
     ("automation", Class::Layer(7)),
+    // Android stand-ins for rfd and arboard, used by ui-egui under those names on Android.
+    ("picker-android", Class::Layer(7)),
+    ("clipboard-android", Class::Layer(7)),
     // test support
     ("testkit", Class::Testkit),
     ("oracle", Class::Testkit),
@@ -88,6 +91,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("pdfcraft", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
+    ("android", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
@@ -104,6 +108,8 @@ pub const SIDEWAYS: &[(&str, &str)] = &[
     ("sign", "security"),
     ("ui-egui", "ui-common"),
     ("ui-egui", "platform"),
+    ("ui-egui", "picker-android"),
+    ("ui-egui", "clipboard-android"),
     ("automation", "platform"),
 ];
 

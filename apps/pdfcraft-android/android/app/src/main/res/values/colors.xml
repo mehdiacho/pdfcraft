@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PdfCraft's title-bar colour: shows behind the status and navigation bars. -->
+    <color name="system_bars">#E9E9EB</color>
+</resources>

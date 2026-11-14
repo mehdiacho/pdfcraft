@@ -17,14 +17,20 @@ const WINDOW: f64 = 0.1;
 const STILL: f64 = 0.05;
 /// The glide slows by `e` every this many seconds; it travels the lift speed times this.
 const TAU: f32 = 0.35;
+/// A finger's flick on a touch screen glides longer, as a phone's lists do.
+const TOUCH_TAU: f32 = 0.6;
+/// Below this lift speed (points per second) a finger's drag stops where it lifts: a slow,
+/// deliberate drag is placing the page, not flicking it.
+const TOUCH_START_SPEED: f32 = 250.0;
 /// Below this speed (points per second) a lift doesn't glide, and a glide stops.
 const START_SPEED: f32 = 150.0;
 const STOP_SPEED: f32 = 10.0;
 /// Fastest glide, in points per second: a flick the system measured over a hiccup can't throw
 /// the document to its end.
 const MAX_SPEED: f32 = 8000.0;
-/// A pass this long after the last one (the view was hidden, the app stalled) ends a glide.
-const STALE: f64 = 0.1;
+/// A pass this long after the last one (the view was hidden, the app stalled) ends a glide. A
+/// slow phone or emulator draws a few frames a second and must still glide.
+const STALE: f64 = 0.5;
 
 pub(crate) struct Fling {
     /// Whether a lift glides on this platform (see the module docs).
@@ -37,6 +43,8 @@ pub(crate) struct Fling {
     at: f64,
     /// Passes in a row the glide moved the view not at all: it is against an edge.
     stalled: u8,
+    /// How quickly the glide slows: [`TAU`], or [`TOUCH_TAU`] for a finger's flick.
+    tau: f32,
 }
 
 impl Default for Fling {
@@ -47,7 +55,7 @@ impl Default for Fling {
 
 impl Fling {
     pub(crate) fn new(enabled: bool) -> Self {
-        Self { enabled, samples: Vec::new(), velocity: Vec2::ZERO, at: 0.0, stalled: 0 }
+        Self { enabled, samples: Vec::new(), velocity: Vec2::ZERO, at: 0.0, stalled: 0, tau: TAU }
     }
 
     pub(crate) fn gliding(&self) -> bool {
@@ -81,12 +89,27 @@ impl Fling {
                     if glide && self.enabled {
                         self.velocity = self.lift_velocity(now);
                         self.at = now;
+                        self.tau = TAU;
                     }
                     self.samples.clear();
                 }
                 TouchPhase::Cancel => self.samples.clear(),
             }
         }
+    }
+
+    /// Glides on at a finger's speed as it lifted off a touch screen (see `touch_pan`), in points
+    /// per second with positive moving the content down. Unlike a touchpad's, a touch screen's
+    /// flick is the app's to glide on every platform, so this ignores [`Fling::enabled`].
+    pub(crate) fn launch(&mut self, velocity: Vec2, now: f64) {
+        self.samples.clear();
+        self.stop();
+        if !(velocity.x.is_finite() && velocity.y.is_finite()) || velocity.length() < TOUCH_START_SPEED {
+            return;
+        }
+        self.velocity = if velocity.length() > MAX_SPEED { velocity * (MAX_SPEED / velocity.length()) } else { velocity };
+        self.at = now;
+        self.tau = TOUCH_TAU;
     }
 
     fn push(&mut self, now: f64, delta: Vec2) {
@@ -120,7 +143,7 @@ impl Fling {
     }
 
     /// How far the glide moves the view in the pass at `now` (zero when not gliding), as the
-    /// exact distance a speed decaying with [`TAU`] covers since the last pass.
+    /// exact distance a speed decaying with its time constant covers since the last pass.
     pub(crate) fn step(&mut self, now: f64) -> Vec2 {
         if !self.gliding() {
             return Vec2::ZERO;
@@ -131,8 +154,8 @@ impl Fling {
             return Vec2::ZERO;
         }
         self.at = now;
-        let decay = (-(dt as f32) / TAU).exp();
-        let moved = self.velocity * TAU * (1.0 - decay);
+        let decay = (-(dt as f32) / self.tau).exp();
+        let moved = self.velocity * self.tau * (1.0 - decay);
         self.velocity *= decay;
         if self.velocity.length() < STOP_SPEED {
             self.stop();
@@ -197,6 +220,21 @@ mod tests {
         // Speed × TAU, less the tail under STOP_SPEED.
         assert!((-travelled - 1500.0 * TAU).abs() < 10.0, "travelled {travelled}");
         assert_eq!(fling.step(now + 1.0 / 60.0), Vec2::ZERO);
+    }
+
+    #[test]
+    fn a_finger_flick_glides_longer_and_a_slow_drag_does_not_glide() {
+        let mut fling = Fling::new(false);
+        fling.launch(vec2(0.0, -200.0), 0.0);
+        assert!(!fling.gliding(), "a deliberate drag stops where it lifts");
+        fling.launch(vec2(0.0, -1500.0), 0.0);
+        assert!(fling.gliding(), "even where touchpad glides are off");
+        let (mut now, mut travelled) = (0.0, 0.0);
+        while fling.gliding() {
+            now += 1.0 / 60.0;
+            travelled += fling.step(now).y;
+        }
+        assert!((-travelled - 1500.0 * TOUCH_TAU).abs() < 15.0, "travelled {travelled}");
     }
 
     #[test]
